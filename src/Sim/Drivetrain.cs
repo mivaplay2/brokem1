@@ -1,11 +1,14 @@
 using System;
+using Ids = MyAutumnCar.Sim.PartCatalog.Ids;
 
 namespace MyAutumnCar.Sim;
 
 /// <summary>
-/// Single dry clutch, five-speed box and a live rear axle. The clutch is modelled
-/// as a slipping torsional coupling, which is what makes dumping it at idle stall
-/// the engine instead of teleporting the car forward.
+/// Clutch, five-speed box and driveshaft — all three of them parts you have to
+/// fit and bolt down. The clutch is a slipping torsional coupling, which is what
+/// makes dumping it at idle stall the engine instead of teleporting the car
+/// forward, and its lining wears from the energy it dissipates while slipping,
+/// so riding it has a cost.
 /// </summary>
 public sealed class Drivetrain
 {
@@ -17,6 +20,21 @@ public sealed class Drivetrain
     public static readonly float[] GearRatios = { -3.55f, 0f, 3.45f, 1.94f, 1.29f, 0.97f, 0.76f };
 
     public static readonly string[] GearNames = { "R", "N", "1", "2", "3", "4", "5" };
+
+    /// <summary>
+    /// Wear per joule the clutch burns off while slipping. A pull-away costs a few
+    /// kilojoules; sitting on a slipping clutch costs it by the minute.
+    /// </summary>
+    public const float ClutchWearPerJoule = 1.2e-7f;
+
+    /// <summary>
+    /// Wear stops here rather than at 1. A part at full wear becomes unfittable,
+    /// and with no parts shop in the slice that would be a dead end — so a ruined
+    /// clutch slips uselessly but can still be taken off and put back on.
+    /// </summary>
+    public const float MaxClutchWear = 0.95f;
+
+    private readonly AssemblyModel _asm;
 
     public int Gear = GearNeutral;
     public float FinalDrive = 3.90f;
@@ -34,13 +52,40 @@ public sealed class Drivetrain
     public float ClutchSlipRadPerSec { get; private set; }
     public string LastShiftMessage { get; private set; } = "";
 
+    /// <summary>Why no drive is reaching the wheels, or null when it is.</summary>
+    public string Blocker { get; private set; }
+
+    public Drivetrain(AssemblyModel assembly)
+    {
+        _asm = assembly ?? throw new ArgumentNullException(nameof(assembly));
+    }
+
     public float Ratio => GearRatios[Gear] * FinalDrive;
     public bool InGear => Gear != GearNeutral && MathF.Abs(GearRatios[Gear]) > 0.001f;
     public float Engagement => Math.Clamp(1f - ClutchPedal, 0f, 1f);
-    public string GearLabel => GearNames[Gear];
+
+    public bool ClutchFitted => _asm.IsFunctional(Ids.Clutch);
+    public bool GearboxFitted => _asm.IsFunctional(Ids.Gearbox);
+    public bool DriveshaftFitted => _asm.IsFunctional(Ids.Driveshaft);
+    public bool Complete => ClutchFitted && GearboxFitted && DriveshaftFitted;
+
+    public float ClutchWear => _asm.TryGetState(Ids.Clutch, out var state) ? state.Wear : 0f;
+
+    /// <summary>How much torque the lining can still hold before it just slips.</summary>
+    public float ClutchCapacityNm => ClutchMaxTorqueNm * (1f - 0.85f * ClutchWear);
+
+    /// <summary>A dash with no gearbox, because there is no lever to read.</summary>
+    public string GearLabel => GearboxFitted ? GearNames[Gear] : "-";
 
     public bool TryShift(int gear)
     {
+        if (!GearboxFitted)
+        {
+            LastShiftMessage = _asm.IsInstalled(Ids.Gearbox)
+                ? "the gearbox is not bolted down"
+                : "there is no gearbox in it";
+            return false;
+        }
         if (gear < GearReverse || gear > GearTop)
         {
             LastShiftMessage = "no such gear";
@@ -60,30 +105,79 @@ public sealed class Drivetrain
     public bool ShiftDown() => TryShift(Math.Max(GearReverse, Gear - 1));
 
     /// <summary>
-    /// Couples engine and driven axle for one tick. Writes the reaction torque
-    /// onto <paramref name="engine"/> and returns the torque to hand the wheels.
+    /// Couples engine and driven axle for one tick. Writes the reaction torque onto
+    /// <paramref name="engine"/> and returns the torque to hand the wheels. Every
+    /// link in the chain has to be fitted and bolted, or nothing gets through.
     /// </summary>
-    public float Transmit(EngineSim engine, float drivenWheelOmega)
+    public float Transmit(EngineSim engine, float drivenWheelOmega, float dt)
     {
-        if (!InGear || Engagement <= 0.001f || engine.Seized)
+        Blocker = null;
+
+        if (!GearboxFitted)
         {
-            engine.LoadTorqueNm = 0f;
-            AxleTorqueNm = 0f;
-            ClutchSlipRadPerSec = 0f;
-            return 0f;
+            Blocker = _asm.IsInstalled(Ids.Gearbox) ? "gearbox not bolted down" : "no gearbox";
+            Gear = GearNeutral;                 // nothing in there to hold a gear
+            return Disengage(engine);
+        }
+        if (!ClutchFitted)
+        {
+            Blocker = _asm.IsInstalled(Ids.Clutch) ? "clutch not bolted down" : "no clutch";
+            return Disengage(engine);
+        }
+        if (!DriveshaftFitted)
+        {
+            Blocker = _asm.IsInstalled(Ids.Driveshaft) ? "driveshaft not bolted down" : "no driveshaft";
+            return Disengage(engine);
+        }
+
+        if (engine.Seized)
+        {
+            Blocker = "engine seized";
+            return Disengage(engine);
+        }
+        if (!InGear)
+        {
+            Blocker = "in neutral";
+            return Disengage(engine);
+        }
+        if (Engagement <= 0.001f)
+        {
+            Blocker = "clutch down";
+            return Disengage(engine);
         }
 
         float ratio = Ratio;
         float engineOmega = engine.Rpm * MathF.Tau / 60f;
-        float targetEngineOmega = drivenWheelOmega * ratio;
-        float slip = engineOmega - targetEngineOmega;
+        float slip = engineOmega - drivenWheelOmega * ratio;
         ClutchSlipRadPerSec = slip;
 
-        float coupling = Math.Clamp(slip * ClutchStiffness, -ClutchMaxTorqueNm, ClutchMaxTorqueNm)
-                         * Engagement;
+        float capacity = ClutchCapacityNm;
+        float coupling = Math.Clamp(slip * ClutchStiffness, -capacity, capacity) * Engagement;
 
         engine.LoadTorqueNm = coupling;
         AxleTorqueNm = coupling * ratio;
+
+        WearTheLining(coupling, slip, dt);
+
+        if (ClutchWear >= MaxClutchWear) Blocker = "clutch worn out";
         return AxleTorqueNm;
+    }
+
+    /// <summary>The lining loses material in proportion to the power it is burning.</summary>
+    private void WearTheLining(float coupling, float slip, float dt)
+    {
+        float slipPowerW = MathF.Abs(coupling * slip);
+        if (slipPowerW < 1f) return;
+        if (!_asm.TryGetState(Ids.Clutch, out var clutch)) return;
+
+        clutch.Wear = Math.Min(MaxClutchWear, clutch.Wear + slipPowerW * ClutchWearPerJoule * dt);
+    }
+
+    private float Disengage(EngineSim engine)
+    {
+        engine.LoadTorqueNm = 0f;
+        AxleTorqueNm = 0f;
+        ClutchSlipRadPerSec = 0f;
+        return 0f;
     }
 }

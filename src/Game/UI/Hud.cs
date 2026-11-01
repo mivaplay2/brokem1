@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using Godot;
 using MyAutumnCar.Sim;
 
@@ -145,6 +146,7 @@ public partial class Hud : CanvasLayer
             if (e.TempWarning) warnings += "  TEMP";
             if (e.HeadGasketWear > 0.02f) warnings += $"  GASKET {e.HeadGasketWear * 100f:0}%";
             if (e.PistonWear > 0.02f) warnings += $"  PISTONS {e.PistonWear * 100f:0}%";
+            if (d.ClutchWear > 0.4f) warnings += $"  CLUTCH {d.ClutchWear * 100f:0}%";
         }
 
         return
@@ -152,6 +154,7 @@ public partial class Hud : CanvasLayer
             $"{e.Rpm,5:0} rpm    gear {d.GearLabel}    {car.SpeedKmh,5:0.0} km/h\n" +
             $"oil {e.OilPressureBar:0.00} bar    water {e.CoolantTempC:0} C    petrol {sim.Fluids.FuelL:0.0} l\n" +
             $"battery {sim.Fluids.BatteryCharge * 100f:0}%    choke {e.Choke * 100f:0}%    clutch {d.ClutchPedal * 100f:0}%\n" +
+            $"drive: {d.Blocker ?? "engaged"}    lining {(1f - d.ClutchWear) * 100f:0}%\n" +
             $"wheels on the ground {car.GroundedWheelCount()}/4\n" +
             $"I ignition   hold R starter   [ ] choke   Z/X gear   shift clutch   F out";
     }
@@ -160,8 +163,12 @@ public partial class Hud : CanvasLayer
     {
         var e = sim.Engine;
         string condition = e.Seized ? "engine: seized" : $"engine: {e.Status}";
+        string transmission = sim.DrivetrainComplete
+            ? "transmission: complete"
+            : $"transmission: {string.Join(", ", sim.MissingForDrive().Select(id => sim.Catalog.Get(id).DisplayName))} to go";
+
         return
-            $"{condition}\n" +
+            $"{condition}    {transmission}\n" +
             $"petrol {sim.Fluids.FuelL:0.0}/{FluidTanks.FuelCapacityL:0} l    " +
             $"oil {sim.Fluids.OilL:0.0}/{FluidTanks.OilCapacityL:0.0} l    " +
             $"water {sim.Fluids.CoolantL:0.0}/{FluidTanks.CoolantCapacityL:0} l\n" +

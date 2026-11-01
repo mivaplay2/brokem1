@@ -29,8 +29,12 @@ public sealed class GameWorld
         (Ids.CylinderHead, new Vector3(-2.55f, 0.20f, -2.00f)),
         (Ids.Carburetor,   new Vector3(-2.15f, 0.15f, -2.55f)),
         (Ids.SparkPlugs,   new Vector3(-1.85f, 0.10f, -2.95f)),
-        (Ids.Battery,      new Vector3( 2.55f, 0.18f, -1.40f)),
-        (Ids.Radiator,     new Vector3( 2.55f, 0.12f, -2.20f)),
+        (Ids.Clutch,       new Vector3( 2.30f, 0.14f,  1.20f)),
+        (Ids.Gearbox,      new Vector3( 2.55f, 0.22f,  2.00f)),
+        (Ids.Driveshaft,   new Vector3( 1.60f, 0.12f,  2.80f)),
+        // Clear of the bench, which occupies x 2.4..4.2, z -2.35..-1.65.
+        (Ids.Battery,      new Vector3( 2.40f, 0.18f, -0.60f)),
+        (Ids.Radiator,     new Vector3( 1.90f, 0.12f, -3.10f)),
         (Ids.WheelFl,      new Vector3(-3.30f, 0.30f,  2.40f)),
         (Ids.WheelFr,      new Vector3(-3.30f, 0.30f,  3.10f)),
         (Ids.WheelRl,      new Vector3( 3.30f, 0.30f,  2.40f)),
@@ -80,7 +84,7 @@ public sealed class GameWorld
             Hud = world.Hud,
         };
 
-        world.Hud.Flash("the chassis is on the floor. the toolbox is on the bench. F1 for the controls.");
+        world.Hud.Flash("the chassis is on the floor, the parts are around it, the toolbox is on the bench. F1 for the controls.");
         return world;
     }
 

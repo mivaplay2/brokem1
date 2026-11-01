@@ -16,11 +16,11 @@ public static class Program
     {
         var sim = FreshCar();
         var a = sim.Assembly;
-        foreach (string id in new[] { Ids.EngineBlock, Ids.CylinderHead, Ids.Carburetor, Ids.SparkPlugs, Ids.Battery, Ids.Radiator })
+        foreach (string id in PartCatalog.BuildOrder)
+        {
+            if (!wheels && System.Array.IndexOf(PartCatalog.Wheels, id) >= 0) continue;
             a.InstallAndSecure(id, out _);
-        if (wheels)
-            foreach (string id in PartCatalog.Wheels)
-                a.InstallAndSecure(id, out _);
+        }
 
         sim.Fluids.Pour(FluidKind.Petrol, 20f);
         sim.Fluids.Pour(FluidKind.Oil, FluidTanks.OilCapacityL);
@@ -51,6 +51,23 @@ public static class Program
     /// back in as the engine warms; without it a carburetted engine goes rich and
     /// dies, which is tested separately.
     /// </summary>
+    /// <summary>Backs every bolt off a part and takes it off.</summary>
+    private static void Unfit(CarSim sim, string id)
+    {
+        var def = sim.Catalog.Get(id);
+        for (int i = 0; i < def.BoltCount; i++)
+            sim.Assembly.TurnBolt(id, i, def.Bolts[i].Tool, 10f, -1, out _);
+        sim.Assembly.TryRemove(id, out _);
+    }
+
+    /// <summary>Backs every bolt off a part but leaves it sitting on its mount.</summary>
+    private static void Loosen(CarSim sim, string id)
+    {
+        var def = sim.Catalog.Get(id);
+        for (int i = 0; i < def.BoltCount; i++)
+            sim.Assembly.TurnBolt(id, i, def.Bolts[i].Tool, 10f, -1, out _);
+    }
+
     private static void Run(CarSim sim, float seconds, float wheelOmega = 0f, float airspeed = 0f,
                             bool trimChoke = true)
     {
@@ -59,6 +76,13 @@ public static class Program
             if (trimChoke) sim.Engine.Choke = WantedChoke(sim.Engine.CoolantTempC);
             sim.Tick(Dt, wheelOmega, airspeed);
         }
+    }
+
+    private static int CountOf(System.Collections.Generic.IEnumerable<string> items)
+    {
+        int n = 0;
+        foreach (string _ in items) n++;
+        return n;
     }
 
     public static int Main()
@@ -323,7 +347,7 @@ public static class Program
         });
 
         // --------------------------------------------------------- drivetrain
-        Case("the box refuses a gear without the clutch", () =>
+        Case("the box refuses a gear without the pedal down", () =>
         {
             var sim = BuiltCar();
             var d = sim.Drivetrain;
@@ -400,6 +424,187 @@ public static class Program
             False(sim.RollsOnFourWheels, "one loose stud is enough to matter");
         });
 
+        // ------------------------------------------------- transmission as parts
+        Case("the gearbox will not go in until the clutch is bolted to the block", () =>
+        {
+            var a = FreshCar().Assembly;
+            a.InstallAndSecure(Ids.EngineBlock, out _);
+            False(a.CanInstall(Ids.Gearbox), "no clutch yet");
+
+            a.TryInstall(Ids.Clutch, out _);
+            False(a.CanInstall(Ids.Gearbox), "clutch fitted but loose");
+
+            a.SecureAll(Ids.Clutch);
+            True(a.CanInstall(Ids.Gearbox), "clutch bolted down");
+        });
+
+        Case("the driveshaft needs the gearbox, and the chain holds in reverse", () =>
+        {
+            var sim = BuiltCar();
+            var a = sim.Assembly;
+            True(a.IsFunctional(Ids.Driveshaft), "built car has a driveshaft");
+
+            Loosen(sim, Ids.Gearbox);
+            Equal(AssemblyResult.BlockedByDependent, a.TryRemove(Ids.Gearbox, out string msg),
+                  "gearbox is trapped by the driveshaft");
+            True(msg.Contains("driveshaft"), $"message names it, got '{msg}'");
+
+            Unfit(sim, Ids.Driveshaft);
+            Equal(AssemblyResult.Ok, a.TryRemove(Ids.Gearbox, out _), "now the box comes out");
+            False(a.CanInstall(Ids.Driveshaft), "and the shaft cannot go back without it");
+        });
+
+        Case("a clutch cannot be pulled out from under the gearbox", () =>
+        {
+            var sim = BuiltCar();
+            Loosen(sim, Ids.Clutch);
+            Equal(AssemblyResult.BlockedByDependent, sim.Assembly.TryRemove(Ids.Clutch, out string msg),
+                  "the box is sitting on it");
+            True(msg.Contains("gearbox"), $"message names it, got '{msg}'");
+        });
+
+        Case("an unbolted gearbox will not hold a gear", () =>
+        {
+            var sim = BuiltCar();
+            sim.Drivetrain.ClutchPedal = 1f;
+            True(sim.Drivetrain.TryShift(2), "first gear with the box bolted on");
+
+            Loosen(sim, Ids.Gearbox);
+            False(sim.Drivetrain.GearboxFitted, "a loose box is not a working box");
+            False(sim.Drivetrain.TryShift(3), "no shifting");
+            True(sim.Drivetrain.LastShiftMessage.Contains("bolted"),
+                 $"and it says why, got '{sim.Drivetrain.LastShiftMessage}'");
+
+            Run(sim, 0.1f);
+            Equal(Drivetrain.GearNeutral, sim.Drivetrain.Gear, "it dropped out of gear");
+            Equal("-", sim.Drivetrain.GearLabel, "the lever reads nothing");
+        });
+
+        Case("taking the box right out drops it out of gear", () =>
+        {
+            var sim = BuiltCar();
+            StartEngine(sim);
+            sim.Drivetrain.ClutchPedal = 1f;
+            sim.Drivetrain.TryShift(2);
+            Unfit(sim, Ids.Driveshaft);
+            Unfit(sim, Ids.Gearbox);
+
+            Run(sim, 0.2f);
+            Equal(Drivetrain.GearNeutral, sim.Drivetrain.Gear, "neutral");
+            False(sim.DrivetrainComplete, "transmission is not complete");
+            Equal(2, CountOf(sim.MissingForDrive()), "two parts missing");
+        });
+
+        Case("a loose clutch passes nothing to the axle", () =>
+        {
+            var sim = BuiltCar();
+            StartEngine(sim);
+            sim.Drivetrain.ClutchPedal = 1f;
+            sim.Drivetrain.TryShift(2);
+            sim.Engine.Throttle = 1f;
+            Run(sim, 3f);
+
+            Loosen(sim, Ids.Clutch);
+            sim.Drivetrain.ClutchPedal = 0.3f;
+            Run(sim, 0.3f);
+
+            False(sim.Drivetrain.ClutchFitted, "a loose clutch is not a working clutch");
+            Near(0f, sim.AxleTorqueNm, 0.0001f, "no drive");
+            Near(0f, sim.Engine.LoadTorqueNm, 0.0001f, "and the engine feels nothing");
+            True(sim.Drivetrain.Blocker.Contains("clutch"), $"blocker names it, got '{sim.Drivetrain.Blocker}'");
+        });
+
+        Case("a loose driveshaft lets the box turn and the axle sit still", () =>
+        {
+            var sim = BuiltCar();
+            StartEngine(sim);
+            sim.Drivetrain.ClutchPedal = 1f;
+            sim.Drivetrain.TryShift(2);
+            sim.Engine.Throttle = 1f;
+            Run(sim, 3f);
+
+            Loosen(sim, Ids.Driveshaft);
+            sim.Drivetrain.ClutchPedal = 0.3f;
+            Run(sim, 0.3f);
+
+            Near(0f, sim.AxleTorqueNm, 0.0001f, "nothing reaches the wheels");
+            True(sim.Engine.Running, "the engine carries on quite happily");
+            True(sim.Drivetrain.Blocker.Contains("driveshaft"), $"blocker names it, got '{sim.Drivetrain.Blocker}'");
+        });
+
+        Case("a complete car can drive and an incomplete one cannot", () =>
+        {
+            var sim = BuiltCar();
+            StartEngine(sim);
+            Run(sim, 1f);
+            True(sim.CanDrive, "built, bolted and running");
+            Equal(0, CountOf(sim.MissingForDrive()), "nothing missing");
+
+            Loosen(sim, Ids.Driveshaft);
+            False(sim.CanDrive, "one loose flange bolt is enough");
+        });
+
+        Case("a worn clutch slips instead of driving", () =>
+        {
+            float TorqueAtTheAxle(float wear)
+            {
+                var sim = BuiltCar();
+                sim.Assembly.Get(Ids.Clutch).Wear = wear;
+                StartEngine(sim);
+                sim.Drivetrain.ClutchPedal = 1f;
+                sim.Drivetrain.TryShift(2);
+                sim.Engine.Throttle = 1f;
+                Run(sim, 3f);
+                sim.Drivetrain.ClutchPedal = 0f;
+                Run(sim, 0.2f);
+                return MathF.Abs(sim.AxleTorqueNm);
+            }
+
+            float fresh = TorqueAtTheAxle(0f);
+            float worn = TorqueAtTheAxle(0.9f);
+            Greater(100f, fresh, $"a fresh clutch bites ({fresh:0} Nm at the axle)");
+            Less(fresh * 0.45f, worn, $"a worn one slips ({worn:0} Nm)");
+
+            var check = BuiltCar();
+            check.Assembly.Get(Ids.Clutch).Wear = 0.9f;
+            Less(check.Drivetrain.ClutchMaxTorqueNm * 0.4f, check.Drivetrain.ClutchCapacityNm,
+                 "capacity falls with wear");
+        });
+
+        Case("riding the clutch wears the lining", () =>
+        {
+            var sim = BuiltCar();
+            StartEngine(sim);
+            sim.Drivetrain.ClutchPedal = 1f;
+            sim.Drivetrain.TryShift(2);
+            sim.Engine.Throttle = 1f;
+            Run(sim, 3f);
+            Near(0f, sim.Drivetrain.ClutchWear, 0.0001f, "nothing yet, the pedal is down");
+
+            sim.Drivetrain.ClutchPedal = 0.5f;   // held halfway, wheels not turning
+            Run(sim, 15f);
+            Greater(0.01f, sim.Drivetrain.ClutchWear, $"it burned the lining ({sim.Drivetrain.ClutchWear * 100f:0.0}%)");
+        });
+
+        Case("a clutch wears out but never becomes unfittable", () =>
+        {
+            var sim = BuiltCar();
+            sim.Assembly.Get(Ids.Clutch).Wear = 0.93f;
+            StartEngine(sim);
+            sim.Drivetrain.ClutchPedal = 1f;
+            sim.Drivetrain.TryShift(2);
+            sim.Engine.Throttle = 1f;
+            Run(sim, 3f);
+            sim.Drivetrain.ClutchPedal = 0.5f;
+            Run(sim, 120f);
+
+            Near(Drivetrain.MaxClutchWear, sim.Drivetrain.ClutchWear, 0.0001f, "wear stops at the cap");
+            Less(1f, sim.Drivetrain.ClutchWear, "so the part is never scrap");
+            True(sim.Assembly.Get(Ids.Clutch).Functional, "a ruined clutch is still a fitted clutch");
+            True(sim.Drivetrain.Blocker != null && sim.Drivetrain.Blocker.Contains("worn"),
+                 $"and the car tells you, got '{sim.Drivetrain.Blocker}'");
+        });
+
         // ------------------------------------------------------------- fluids
         Case("tanks do not overfill and the pour reports what fitted", () =>
         {
@@ -419,6 +624,7 @@ public static class Program
             Run(sim, 5f);
             sim.Assembly.TurnBolt(Ids.WheelRr, 2, ToolSize.Wrench17, 0.6f, -1, out _);
             sim.Assembly.Get(Ids.Carburetor).Wear = 0.42f;
+            sim.Assembly.Get(Ids.Clutch).Wear = 0.21f;
             sim.Drivetrain.ClutchPedal = 1f;
             sim.Drivetrain.TryShift(4);
 
@@ -429,6 +635,8 @@ public static class Program
             Near(sim.Assembly.Get(Ids.WheelRr).BoltTightness[2],
                  restored.Assembly.Get(Ids.WheelRr).BoltTightness[2], 0.0001f, "loosened stud");
             Near(0.42f, restored.Assembly.Get(Ids.Carburetor).Wear, 0.0001f, "part wear");
+            Near(sim.Drivetrain.ClutchWear, restored.Drivetrain.ClutchWear, 0.0001f, "clutch lining wear");
+            True(restored.Assembly.IsSecured(Ids.Gearbox), "gearbox still bolted");
             True(restored.Assembly.IsSecured(Ids.CylinderHead), "head still bolted");
             False(restored.RollsOnFourWheels, "that loose stud survived the save");
             Near(sim.Fluids.FuelL, restored.Fluids.FuelL, 0.0001f, "fuel");

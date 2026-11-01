@@ -43,6 +43,27 @@ public sealed class PartCatalog
         Ids.EngineBlock, Ids.CylinderHead, Ids.Carburetor, Ids.SparkPlugs,
     };
 
+    /// <summary>
+    /// Everything between the flywheel and the rear axle. The engine runs
+    /// perfectly well without any of it; the car simply does not move.
+    /// </summary>
+    public static readonly string[] Transmission =
+    {
+        Ids.Clutch, Ids.Gearbox, Ids.Driveshaft,
+    };
+
+    /// <summary>
+    /// A workable order to build the car in. Dependencies are enforced by
+    /// <see cref="AssemblyModel"/>; this is only what the next-job hint walks.
+    /// </summary>
+    public static readonly string[] BuildOrder =
+    {
+        Ids.EngineBlock, Ids.CylinderHead, Ids.Carburetor, Ids.SparkPlugs,
+        Ids.Clutch, Ids.Gearbox, Ids.Driveshaft,
+        Ids.Battery, Ids.Radiator,
+        Ids.WheelFl, Ids.WheelFr, Ids.WheelRl, Ids.WheelRr,
+    };
+
     public static readonly string[] Wheels =
     {
         Ids.WheelFl, Ids.WheelFr, Ids.WheelRl, Ids.WheelRr,
@@ -54,6 +75,9 @@ public sealed class PartCatalog
         public const string CylinderHead = "cylinder_head";
         public const string Carburetor = "carburetor";
         public const string SparkPlugs = "spark_plugs";
+        public const string Clutch = "clutch";
+        public const string Gearbox = "gearbox";
+        public const string Driveshaft = "driveshaft";
         public const string Battery = "battery";
         public const string Radiator = "radiator";
         public const string WheelFl = "wheel_fl";
@@ -102,6 +126,9 @@ public sealed class PartCatalog
             new MountPoint { Id = "mount_head",     LocalPosition = new Vector3(0f, 0.88f, -1.10f), SnapRadius = 0.4f },
             new MountPoint { Id = "mount_carb",     LocalPosition = new Vector3(0f, 1.02f, -1.02f), SnapRadius = 0.35f },
             new MountPoint { Id = "mount_plugs",    LocalPosition = new Vector3(0.18f, 0.94f, -1.10f), SnapRadius = 0.35f },
+            new MountPoint { Id = "mount_clutch",     LocalPosition = new Vector3(0f, 0.58f, -0.70f), SnapRadius = 0.42f },
+            new MountPoint { Id = "mount_gearbox",    LocalPosition = new Vector3(0f, 0.54f, -0.22f) },
+            new MountPoint { Id = "mount_driveshaft", LocalPosition = new Vector3(0f, 0.40f,  0.55f) },
             new MountPoint { Id = "mount_battery",  LocalPosition = new Vector3(0.46f, 0.74f, -1.46f) },
             new MountPoint { Id = "mount_radiator", LocalPosition = new Vector3(0f, 0.62f, -1.78f) },
             new MountPoint { Id = "hub_fl", LocalPosition = new Vector3(-0.78f, 0.30f, -1.25f) },
@@ -164,6 +191,48 @@ public sealed class PartCatalog
                 },
                 Size = new Vector3(0.05f, 0.09f, 0.40f),
                 ColorHex = "d9d4c8",
+            },
+            new PartDefinition
+            {
+                Id = Ids.Clutch,
+                DisplayName = "clutch",
+                Kind = PartKind.Transmission,
+                MassKg = 8.5f,
+                MountId = "mount_clutch",
+                RequiresSecured = new[] { Ids.EngineBlock },
+                Bolts = Ring(6, 0.15f, 0f, ToolSize.Wrench12, 0.6f),
+                Size = new Vector3(0.30f, 0.30f, 0.09f),
+                ColorHex = "9b9ea3",
+            },
+            new PartDefinition
+            {
+                Id = Ids.Gearbox,
+                DisplayName = "gearbox",
+                Kind = PartKind.Transmission,
+                MassKg = 32f,
+                MountId = "mount_gearbox",
+                RequiresSecured = new[] { Ids.Clutch },
+                Bolts = Ring(8, 0.16f, -0.02f, ToolSize.Wrench14, 0.45f),
+                Size = new Vector3(0.30f, 0.30f, 0.62f),
+                ColorHex = "5f666c",
+            },
+            new PartDefinition
+            {
+                Id = Ids.Driveshaft,
+                DisplayName = "driveshaft",
+                Kind = PartKind.Transmission,
+                MassKg = 9f,
+                MountId = "mount_driveshaft",
+                RequiresSecured = new[] { Ids.Gearbox },
+                Bolts = new[]
+                {
+                    new BoltSpec { Id = "f1", LocalPosition = new Vector3(-0.06f, 0f, -0.62f), Tool = ToolSize.Wrench12, TightenRate = 0.65f },
+                    new BoltSpec { Id = "f2", LocalPosition = new Vector3( 0.06f, 0f, -0.62f), Tool = ToolSize.Wrench12, TightenRate = 0.65f },
+                    new BoltSpec { Id = "r1", LocalPosition = new Vector3(-0.06f, 0f,  0.62f), Tool = ToolSize.Wrench12, TightenRate = 0.65f },
+                    new BoltSpec { Id = "r2", LocalPosition = new Vector3( 0.06f, 0f,  0.62f), Tool = ToolSize.Wrench12, TightenRate = 0.65f },
+                },
+                Size = new Vector3(0.10f, 0.10f, 1.35f),
+                ColorHex = "7a7f85",
             },
             new PartDefinition
             {

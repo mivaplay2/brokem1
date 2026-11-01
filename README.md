@@ -2,8 +2,9 @@
 
 A part-by-part car assembly and survival sim in the vein of *My Summer Car*: the
 car arrives as a bare chassis and a floor full of components, and it only moves
-once you have fitted every part, torqued every bolt with the right spanner and
-poured in the fluids it needs. Run it dry and you will seize the engine for good.
+once you have fitted every part — engine, transmission and all — torqued every
+bolt with the right spanner and poured in the fluids it needs. Run it dry and you
+will seize the engine for good; ride the clutch and you will burn it out.
 
 This is a **vertical slice**, not a finished game. It is deliberately the hardest
 third of the project — the assembly model, the mechanical simulation, the save
@@ -44,7 +45,7 @@ src/Sim/                   pure C#, no Godot — the game's actual rules
   PartCatalog.cs           the parts list and the mount points on the chassis
   AssemblyModel.cs         install and removal rules, mass, centre of mass
   EngineSim.cs             a 1.6 carburetted four as one rotating inertia
-  Drivetrain.cs            slipping clutch, five speeds and reverse
+  Drivetrain.cs            clutch, five speeds and driveshaft — all fitted parts
   FluidTanks.cs            petrol, oil, coolant, battery charge
   CarSim.cs                the four of those as one tickable object
   SaveData.cs / SaveSystem.cs
@@ -121,18 +122,27 @@ clutch, `Z` down a gear, `X` up a gear, `N` neutral, `F` get out.
    underneath it is loose, not merely while it is absent.
 3. **Cylinder head** on the block, eight 14 mm. **Carburettor**, two 10 mm.
    **Spark plugs**, plug spanner.
-4. **Battery** (two 10 mm) or the starter will not turn. **Radiator** (four
+4. **Clutch** against the back of the block, six 12 mm. Then the **gearbox** onto
+   the clutch, eight 14 mm, then the **driveshaft** onto the gearbox, four 12 mm
+   flange bolts. The chain is enforced in both directions: the gearbox will not
+   go on until the clutch is bolted down, and the clutch cannot come out from
+   under the gearbox.
+5. **Battery** (two 10 mm) or the starter will not turn. **Radiator** (four
    10 mm) or you will cook the head gasket within a couple of minutes.
-5. **Four wheels**, four 17 mm studs each. One loose stud and that corner is not
+6. **Four wheels**, four 17 mm studs each. One loose stud and that corner is not
    carrying the car.
-6. Pour **oil** in before you start it. The oil light is the one warning that
+7. Pour **oil** in before you start it. The oil light is the one warning that
    matters: thirty seconds of running dry and the pistons are scrap, permanently,
    through a save and back.
-7. **Petrol** in the filler, **coolant** in the radiator cap.
-8. Get in, `I`, pull the choke out with `]`, hold `R`. Push the choke back in as
+8. **Petrol** in the filler, **coolant** in the radiator cap.
+9. Get in, `I`, pull the choke out with `]`, hold `R`. Push the choke back in as
    it warms up or it will run rich and die.
-9. Clutch down, `X` into first, feed the clutch out with some throttle. Dumping
-   it at idle stalls the engine, as it should.
+10. Clutch down, `X` into first, feed the clutch out with some throttle. Dumping
+    it at idle stalls the engine, as it should.
+
+The engine will happily start and idle with no transmission in the car at all.
+It simply will not move, and the gear lever reads `-` because there is no box to
+put in gear.
 
 ## What is actually simulated
 
@@ -145,8 +155,14 @@ clutch, `Z` down a gear, `X` up a gear, `N` neutral, `F` get out.
   battery drain, fuel burn, oil pressure from sump level and revs, piston wear
   when pressure is lost, cooling against radiator and airflow, head gasket damage
   above 117 °C, rev limiter, and the specific reason it stopped kept on the gauge.
-- **Drivetrain**: a slipping clutch modelled as a torsional coupling, five speeds
-  and reverse, no shift without the pedal down.
+- **The transmission, as three fitted parts**: the clutch is a slipping torsional
+  coupling whose lining wears from the energy it dissipates, so riding it costs
+  you — a hard pull-away burns about half a percent, and a worn clutch loses
+  torque capacity and slips instead of driving. Five speeds and reverse, no shift
+  without the pedal down, and no shift at all without a bolted gearbox: loosen its
+  bolts while driving and it drops out of gear. A loose clutch or driveshaft
+  passes nothing to the axle while the engine carries on as though nothing were
+  wrong, and the dash says which link is broken.
 - **Chassis**: raycast strut per corner with spring and damper, tyre forces inside
   a friction circle, speed-sensitive steering lock, aerodynamic drag.
 
@@ -159,8 +175,12 @@ Stated plainly, because the gap between this and a game is mostly in here.
   but wheel angular velocity is kinematic rather than simulated.
 - **The lateral tyre model is a slip-velocity spring**, not Pacejka. It is grippy
   and forgiving; it will not reward a handbrake turn.
-- **Gearbox, clutch and axles are not parts yet.** They are assumed present and
-  perfect. They belong in the catalog next.
+- **Clutch wear is capped at 95%, not 100%.** A part at full wear becomes
+  unfittable, and with no parts shop in the slice that would be a dead end. A
+  ruined clutch therefore slips uselessly but can still be taken off and put back
+  on. Remove the cap once there is somewhere to buy a new one.
+- **The differential and rear axle are still assumed perfect.** The driveshaft is
+  a part; what it drives is not.
 - **Placeholder geometry and no sound at all.** Everything is a box or a cylinder.
 - **The world is a garage and a strip of tarmac.** No traffic, shops, jobs, phone
   or radio.
@@ -172,23 +192,24 @@ Stated plainly, because the gap between this and a game is mostly in here.
 
 ## Next, in the order that pays off
 
-1. Gearbox, clutch and driveshaft as fitted parts, so the drivetrain can be
-   wrong too.
-2. Real wheel angular velocity, which gives wheelspin, lockup and engine braking
-   through the same clutch model that is already there.
-3. Player needs and a day cycle — the other half of what makes the original tense.
+1. Real wheel angular velocity, which gives wheelspin, lockup and engine braking
+   through the clutch model that is already there.
+2. Player needs and a day cycle — the other half of what makes the original tense.
+3. Gearbox oil, and a differential that can be wrong too.
 4. Meshes and sound. The loop has to be right first; it is cheaper to replace a
    box than to rebuild the model under it.
-5. A road network and somewhere to drive to.
+5. A road network, somewhere to drive to, and somewhere to buy a clutch.
 
 ## Verification
 
-- `tests/SimTests`: **32 cases, 91 checks, all passing** on .NET 8.0.427.
+- `tests/SimTests`: **43 cases, 131 checks, all passing** on .NET 8.0.427.
 - `--smoke` on Godot 4.5.stable.mono, headless, Linux x86_64: the car is built
   from loose parts through the real model, stands up on its suspension (the body
   lifts from −0.27 m to 0.05 m as the wheels go on), starts cold on the choke at
-  847 rpm, pulls away in first and **drives 42.05 m out of the garage at a peak
-  of 37.2 km/h**, tracking within 0.20 m of straight, then stops on the brakes.
+  847 rpm, pulls away in first and **drives 40.67 m out of the garage at a peak
+  of 36.3 km/h**, tracking within 0.18 m of straight, then stops on the brakes.
+  The bare chassis refuses a gear; pulling away burns 0.52% of the clutch lining,
+  so the wear model is live in the scene and not only in the unit tests.
 - `dotnet build`: clean, no warnings.
 - **Not checked:** running with a window, rendering, or anything on Windows or
   macOS. Everything above was verified headless on Linux. There is no frame-rate

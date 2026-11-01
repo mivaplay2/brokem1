@@ -19,13 +19,6 @@ public partial class HeadlessSmokeTest : Node3D
 {
     private const int Hz = 60;
 
-    private static readonly string[] BuildOrder =
-    {
-        Ids.EngineBlock, Ids.CylinderHead, Ids.Carburetor, Ids.SparkPlugs,
-        Ids.Battery, Ids.Radiator,
-        Ids.WheelFl, Ids.WheelFr, Ids.WheelRl, Ids.WheelRr,
-    };
-
     private GameWorld _world;
     private readonly List<string> _failures = new();
     private int _frame;
@@ -102,6 +95,8 @@ public partial class HeadlessSmokeTest : Node3D
         _chassisRestY = car.GlobalPosition.Y;
 
         Equal(0, car.GroundedWheelCount(), "a car with no wheels has no wheels on the ground");
+        False(_world.Sim.DrivetrainComplete, "a bare chassis has no transmission in it");
+        False(_world.Sim.Drivetrain.TryShift(2), "and no gear can be selected");
         Less(0.3f, Mathf.Abs(car.LinearVelocity.Y), "the bare chassis has settled on the floor");
         Near(AssemblyModel.ChassisMassKg, car.Mass, 0.5f, "bare chassis mass");
 
@@ -113,7 +108,7 @@ public partial class HeadlessSmokeTest : Node3D
     {
         var sim = _world.Sim;
 
-        foreach (string id in BuildOrder)
+        foreach (string id in PartCatalog.BuildOrder)
         {
             var result = sim.Assembly.InstallAndSecure(id, out string message);
             if (result != AssemblyResult.Ok)
@@ -140,13 +135,15 @@ public partial class HeadlessSmokeTest : Node3D
         _world.Car.OnAssemblyChanged();
 
         float expected = AssemblyModel.ChassisMassKg;
-        foreach (string id in BuildOrder) expected += sim.Catalog.Get(id).MassKg;
+        foreach (string id in PartCatalog.BuildOrder) expected += sim.Catalog.Get(id).MassKg;
         Near(expected, _world.Car.Mass, 0.5f, "mass after building it");
 
         var com = sim.Assembly.CenterOfMassLocal;
         Less(0f, com.Z, "a fitted engine pulls the balance forward");
         True(sim.RollsOnFourWheels, "four wheels bolted on");
         Equal(0, CountList(sim.MissingForEngine()), "nothing missing for the engine");
+        True(sim.DrivetrainComplete, "clutch, gearbox and driveshaft all bolted on");
+        Equal(0, CountList(sim.MissingForDrive()), "nothing missing to drive");
     }
 
     private void CheckItStandsOnItsWheels()
@@ -177,6 +174,10 @@ public partial class HeadlessSmokeTest : Node3D
         Greater(6.0f, _peakSpeed, $"it got up to speed ({_peakSpeed:0.0} km/h peak)");
         Less(0.35f, Mathf.Abs(car.GlobalPosition.X), $"it tracked straight (drifted {car.GlobalPosition.X:0.00} m)");
         Greater(0.3f, _world.Sim.Engine.OilPressureBar, "oil pressure while driving");
+        True(_world.Sim.CanDrive, "running, bolted together and on its wheels");
+        Greater(0f, _world.Sim.Drivetrain.ClutchWear,
+                $"pulling away burned some lining ({_world.Sim.Drivetrain.ClutchWear * 100f:0.00}%)");
+        Less(0.05f, _world.Sim.Drivetrain.ClutchWear, "but nowhere near ruining it");
         False(_world.Sim.Engine.Seized, "nothing seized");
         Equal(4, car.GroundedWheelCount(), "it stayed on all four wheels");
     }

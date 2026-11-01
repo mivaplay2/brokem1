@@ -237,7 +237,7 @@ public sealed class AssemblyModel
     /// <summary>Human-readable next job, for the HUD.</summary>
     public string NextJobHint()
     {
-        foreach (string id in PartCatalog.EngineCritical.Concat(new[] { PartCatalog.Ids.Battery }).Concat(PartCatalog.Wheels))
+        foreach (string id in PartCatalog.BuildOrder)
         {
             var def = Catalog.Get(id);
             var st = Get(id);

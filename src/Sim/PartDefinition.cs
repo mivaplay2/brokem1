@@ -5,6 +5,7 @@ namespace MyAutumnCar.Sim;
 public enum PartKind
 {
     Engine,
+    Transmission,
     Fuel,
     Electrical,
     Cooling,

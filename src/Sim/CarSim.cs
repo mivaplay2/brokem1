@@ -13,7 +13,7 @@ public sealed class CarSim
     public PartCatalog Catalog { get; }
     public AssemblyModel Assembly { get; }
     public EngineSim Engine { get; } = new();
-    public Drivetrain Drivetrain { get; } = new();
+    public Drivetrain Drivetrain { get; }
     public FluidTanks Fluids { get; } = FluidTanks.Empty();
 
     public float AxleTorqueNm { get; private set; }
@@ -25,6 +25,7 @@ public sealed class CarSim
     {
         Catalog = catalog;
         Assembly = new AssemblyModel(catalog);
+        Drivetrain = new Drivetrain(Assembly);
         Engine.ResetToCold();
     }
 
@@ -33,6 +34,16 @@ public sealed class CarSim
 
     public IEnumerable<string> MissingForEngine() => Assembly.MissingForEngine();
 
+    /// <summary>Clutch, gearbox and driveshaft all fitted and bolted down.</summary>
+    public bool DrivetrainComplete => Drivetrain.Complete;
+
+    /// <summary>Transmission parts that are not yet fitted and bolted, in build order.</summary>
+    public IEnumerable<string> MissingForDrive() =>
+        PartCatalog.Transmission.Concat(PartCatalog.Wheels).Where(id => !Assembly.IsFunctional(id));
+
+    /// <summary>Everything that has to be true before the car can move under its own power.</summary>
+    public bool CanDrive => Engine.Running && DrivetrainComplete && RollsOnFourWheels;
+
     /// <summary>
     /// One simulation step. <paramref name="drivenWheelOmega"/> is the mean angular
     /// speed of the driven wheels in rad/s, <paramref name="airspeedMs"/> the car's
@@ -40,7 +51,7 @@ public sealed class CarSim
     /// </summary>
     public void Tick(float dt, float drivenWheelOmega, float airspeedMs)
     {
-        AxleTorqueNm = Drivetrain.Transmit(Engine, drivenWheelOmega);
+        AxleTorqueNm = Drivetrain.Transmit(Engine, drivenWheelOmega, dt);
         Engine.Update(dt, Assembly, Fluids, airspeedMs);
         PlayTimeSeconds += dt;
     }
