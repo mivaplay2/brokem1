@@ -1,0 +1,19 @@
+# Godot
+.godot/
+/android/
+export_presets.cfg
+*.translation
+
+# .NET
+bin/
+obj/
+*.user
+.vs/
+.idea/
+
+# Build output
+/build/
+/export/
+
+# Saves (runtime data)
+*.mac.save

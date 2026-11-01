@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>12</LangVersion>
+    <RootNamespace>MyAutumnCar.Tests</RootNamespace>
+    <AssemblyName>SimTests</AssemblyName>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+  </PropertyGroup>
+
+  <!-- The simulation layer is deliberately free of Godot types, so it compiles
+       straight into a plain console project and runs in CI without the engine. -->
+  <ItemGroup>
+    <Compile Include="../../src/Sim/**/*.cs" />
+    <Compile Include="*.cs" />
+  </ItemGroup>
+</Project>
