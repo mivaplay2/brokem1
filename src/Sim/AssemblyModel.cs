@@ -29,7 +29,7 @@ public sealed class AssemblyModel
     /// <summary>Bare chassis, with the gearbox and axles treated as fixed for the slice.</summary>
     public const float ChassisMassKg = 640f;
 
-    private static readonly Vector3 ChassisComLocal = new(0f, 0.46f, -0.12f);
+    private static readonly Vector3 ChassisComLocal = new(0f, 0.46f, 0.12f);
 
     private readonly Dictionary<string, PartState> _states;
 

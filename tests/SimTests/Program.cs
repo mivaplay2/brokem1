@@ -137,7 +137,7 @@ public static class Program
             var bare = sim.Assembly.CenterOfMassLocal;
             sim.Assembly.InstallAndSecure(Ids.EngineBlock, out _);
             var loaded = sim.Assembly.CenterOfMassLocal;
-            Greater(bare.Z, loaded.Z, "com shifts toward the nose");
+            Less(bare.Z, loaded.Z, "com shifts toward the nose, which is -Z");
             Greater(bare.Y, loaded.Y, "com rises with the block");
             Near(AssemblyModel.ChassisMassKg + 94f, sim.Assembly.TotalMassKg, 0.01f, "total mass");
         });

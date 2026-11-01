@@ -98,16 +98,16 @@ public sealed class PartCatalog
     {
         var mounts = new[]
         {
-            new MountPoint { Id = "mount_engine",   LocalPosition = new Vector3(0f, 0.62f, 1.10f) },
-            new MountPoint { Id = "mount_head",     LocalPosition = new Vector3(0f, 0.88f, 1.10f), SnapRadius = 0.4f },
-            new MountPoint { Id = "mount_carb",     LocalPosition = new Vector3(0f, 1.02f, 1.02f), SnapRadius = 0.35f },
-            new MountPoint { Id = "mount_plugs",    LocalPosition = new Vector3(0.18f, 0.94f, 1.10f), SnapRadius = 0.35f },
-            new MountPoint { Id = "mount_battery",  LocalPosition = new Vector3(0.46f, 0.74f, 1.46f) },
-            new MountPoint { Id = "mount_radiator", LocalPosition = new Vector3(0f, 0.62f, 1.78f) },
-            new MountPoint { Id = "hub_fl", LocalPosition = new Vector3(-0.78f, 0.30f,  1.25f) },
-            new MountPoint { Id = "hub_fr", LocalPosition = new Vector3( 0.78f, 0.30f,  1.25f) },
-            new MountPoint { Id = "hub_rl", LocalPosition = new Vector3(-0.78f, 0.30f, -1.25f) },
-            new MountPoint { Id = "hub_rr", LocalPosition = new Vector3( 0.78f, 0.30f, -1.25f) },
+            new MountPoint { Id = "mount_engine",   LocalPosition = new Vector3(0f, 0.62f, -1.10f) },
+            new MountPoint { Id = "mount_head",     LocalPosition = new Vector3(0f, 0.88f, -1.10f), SnapRadius = 0.4f },
+            new MountPoint { Id = "mount_carb",     LocalPosition = new Vector3(0f, 1.02f, -1.02f), SnapRadius = 0.35f },
+            new MountPoint { Id = "mount_plugs",    LocalPosition = new Vector3(0.18f, 0.94f, -1.10f), SnapRadius = 0.35f },
+            new MountPoint { Id = "mount_battery",  LocalPosition = new Vector3(0.46f, 0.74f, -1.46f) },
+            new MountPoint { Id = "mount_radiator", LocalPosition = new Vector3(0f, 0.62f, -1.78f) },
+            new MountPoint { Id = "hub_fl", LocalPosition = new Vector3(-0.78f, 0.30f, -1.25f) },
+            new MountPoint { Id = "hub_fr", LocalPosition = new Vector3( 0.78f, 0.30f, -1.25f) },
+            new MountPoint { Id = "hub_rl", LocalPosition = new Vector3(-0.78f, 0.30f,  1.25f) },
+            new MountPoint { Id = "hub_rr", LocalPosition = new Vector3( 0.78f, 0.30f,  1.25f) },
         };
 
         var parts = new[]
