@@ -147,6 +147,8 @@ public partial class Hud : CanvasLayer
             if (e.HeadGasketWear > 0.02f) warnings += $"  GASKET {e.HeadGasketWear * 100f:0}%";
             if (e.PistonWear > 0.02f) warnings += $"  PISTONS {e.PistonWear * 100f:0}%";
             if (d.ClutchWear > 0.4f) warnings += $"  CLUTCH {d.ClutchWear * 100f:0}%";
+            if (car.DrivenWheelsSpinning()) warnings += "  WHEELSPIN";
+            if (car.AnyWheelLocked()) warnings += "  LOCKED";
         }
 
         return

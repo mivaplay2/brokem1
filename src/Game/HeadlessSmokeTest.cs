@@ -8,9 +8,12 @@ namespace MyAutumnCar.Game;
 
 /// <summary>
 /// Builds the real world, bolts the real car together through the real model and
-/// drives it out of the garage with no one at the keyboard. The simulation tests
-/// cover the mechanics; this covers the half the simulation cannot see — mounts,
-/// suspension, tyre forces, mass and balance actually behaving in the scene.
+/// drives it with no one at the keyboard. The simulation tests cover the
+/// mechanics; this covers the half the simulation cannot see — mounts,
+/// suspension, tyre forces, mass and balance behaving in the scene — and the
+/// three behaviours that are supposed to fall out of giving the wheels their own
+/// rotation rather than being written by hand: wheelspin, engine braking and
+/// lockup.
 ///
 /// Run with:  godot --headless --path . -- --smoke
 /// Exits 0 when every check passes, 1 otherwise.
@@ -19,13 +22,32 @@ public partial class HeadlessSmokeTest : Node3D
 {
     private const int Hz = 60;
 
+    private const int FrameBareChassis = 1 * Hz;
+    private const int FrameStanding = 3 * Hz;
+    private const int FrameShift = 3 * Hz + 10;
+    private const int FrameRevIt = 8 * Hz;
+    private const int FrameDumpClutch = 9 * Hz + 30;
+    private const int FrameCheckLaunch = 11 * Hz;
+    private const int FrameCheckDrive = 20 * Hz;
+    private const int FrameCheckEngineBraking = 26 * Hz;
+    private const int FrameCheckLockup = 28 * Hz;
+    private const int FrameCheckStopped = 31 * Hz;
+
     private GameWorld _world;
     private readonly List<string> _failures = new();
     private int _frame;
 
     private float _chassisRestY;
     private float _startZ;
-    private float _peakSpeed;
+    private float _peakSpeedKmh;
+    private float _speedAtLiftKmh;
+
+    private bool _sawWheelspin;
+    private float _peakSlipRatio;
+    private float _peakTyreOverspeedMs;
+
+    private bool _sawLockup;
+    private float _lockedAtKmh;
 
     public override void _Ready()
     {
@@ -44,49 +66,91 @@ public partial class HeadlessSmokeTest : Node3D
 
         // Keep the choke where a driver would hold it for the current temperature.
         sim.Engine.Choke = Mathf.Clamp((35f - sim.Engine.CoolantTempC) / 35f, 0f, 1f);
-        if (_frame > 8 * Hz) _peakSpeed = Mathf.Max(_peakSpeed, car.SpeedKmh);
+
+        if (_frame > FrameDumpClutch) _peakSpeedKmh = Mathf.Max(_peakSpeedKmh, car.SpeedKmh);
+        ObserveLaunch(car);
+        ObserveBraking(car);
 
         switch (_frame)
         {
-            case 1 * Hz:
+            case FrameBareChassis:
                 CheckBareChassis();
                 BuildTheCar();
                 break;
 
-            case 3 * Hz:
+            case FrameStanding:
                 CheckItStandsOnItsWheels();
                 StartCranking();
                 break;
 
-            case 3 * Hz + 10:
-                True(_world.Sim.Drivetrain.TryShift(2), "first gear selected with the clutch down");
+            case FrameShift:
+                True(sim.Drivetrain.TryShift(2), "first gear selected with the clutch down");
                 break;
 
-            case 8 * Hz:
+            case FrameRevIt:
                 True(sim.Engine.Running, $"it started — status '{sim.Engine.Status}', {sim.Engine.Rpm:0} rpm");
                 controls.Starter = false;
-                controls.Throttle = 0.7f;
+                controls.Throttle = 1f;          // revs first, clutch still down
                 _startZ = car.GlobalPosition.Z;
                 break;
 
-            case 15 * Hz:
+            case FrameCheckLaunch:
+                CheckLaunch();
+                controls.Throttle = 0.6f;
+                break;
+
+            case FrameCheckDrive:
                 CheckItDroveOut();
-                controls.Throttle = 0f;
+                _speedAtLiftKmh = car.SpeedKmh;
+                controls.Throttle = 0f;          // off the throttle, still in gear
+                break;
+
+            case FrameCheckEngineBraking:
+                CheckEngineBraking();
                 controls.Brake = 1f;
                 break;
 
-            case 20 * Hz:
+            case FrameCheckLockup:
+                CheckLockup();
+                break;
+
+            case FrameCheckStopped:
                 Less(1.2f, car.SpeedKmh, $"the brakes stopped it ({car.SpeedKmh:0.0} km/h)");
                 Finish();
                 break;
         }
 
-        // Feed the clutch in over a second, as you would to pull away.
-        if (_frame > 8 * Hz + 30 && _frame <= 15 * Hz)
+        // Drop the clutch in a fifth of a second, which is how you get wheelspin.
+        if (_frame > FrameDumpClutch && _frame <= FrameDumpClutch + 12)
+            controls.Clutch = Mathf.Clamp(1f - (_frame - FrameDumpClutch) / 12f, 0f, 1f);
+    }
+
+    /// <summary>
+    /// Watches the pull-away rather than sampling one frame of it: the slip closes
+    /// within a few ticks, so a single probe would be a timing coincidence.
+    /// </summary>
+    private void ObserveLaunch(CarNode car)
+    {
+        if (_frame <= FrameDumpClutch || _frame > FrameCheckLaunch) return;
+
+        if (car.DrivenWheelsSpinning()) _sawWheelspin = true;
+
+        foreach (var wheel in car.Wheels)
         {
-            float t = (_frame - (8f * Hz + 30f)) / Hz;
-            controls.Clutch = Mathf.Clamp(1f - t, 0f, 1f);
+            if (!wheel.Driven || !wheel.Grounded) continue;
+            _peakSlipRatio = Mathf.Max(_peakSlipRatio, wheel.SlipRatio);
+            _peakTyreOverspeedMs = Mathf.Max(_peakTyreOverspeedMs,
+                                             wheel.TyreSurfaceSpeedMs - wheel.ForwardSpeedMs);
         }
+    }
+
+    private void ObserveBraking(CarNode car)
+    {
+        if (_frame <= FrameCheckEngineBraking || _frame > FrameCheckLockup) return;
+        if (!car.AnyWheelLocked()) return;
+
+        if (!_sawLockup) _lockedAtKmh = car.SpeedKmh;
+        _sawLockup = true;
     }
 
     private void CheckBareChassis()
@@ -153,6 +217,7 @@ public partial class HeadlessSmokeTest : Node3D
         Greater(_chassisRestY + 0.12f, car.GlobalPosition.Y,
                 $"the suspension lifted it off the floor ({_chassisRestY:0.00} m to {car.GlobalPosition.Y:0.00} m)");
         Less(0.25f, Mathf.Abs(car.LinearVelocity.Length()), "and it is sitting still");
+        Near(0f, car.DrivenWheelOmega(), 0.4f, "with the wheels barely turning as it settles");
     }
 
     private void StartCranking()
@@ -164,6 +229,18 @@ public partial class HeadlessSmokeTest : Node3D
         controls.Handbrake = false;
     }
 
+    private void CheckLaunch()
+    {
+        var sim = _world.Sim;
+
+        True(_sawWheelspin,
+             $"dropping the clutch spun the driven wheels up (tyre ran {_peakTyreOverspeedMs:0.0} m/s " +
+             $"faster than the road, peak slip ratio {_peakSlipRatio:0.00})");
+        Greater(0.2f, _peakSlipRatio, "the driven tyre slipped rather than gripping perfectly");
+        True(sim.Engine.Running, $"and it did not stall — '{sim.Engine.Status}', {sim.Engine.Rpm:0} rpm");
+        Greater(0f, sim.Drivetrain.ClutchWear, $"the dump cost some lining ({sim.Drivetrain.ClutchWear * 100f:0.00}%)");
+    }
+
     private void CheckItDroveOut()
     {
         var car = _world.Car;
@@ -171,15 +248,38 @@ public partial class HeadlessSmokeTest : Node3D
 
         True(_world.Sim.Engine.Running, $"still running — '{_world.Sim.Engine.Status}'");
         Greater(2.0f, travelled, $"it drove forward ({travelled:0.00} m)");
-        Greater(6.0f, _peakSpeed, $"it got up to speed ({_peakSpeed:0.0} km/h peak)");
-        Less(0.35f, Mathf.Abs(car.GlobalPosition.X), $"it tracked straight (drifted {car.GlobalPosition.X:0.00} m)");
+        Greater(6.0f, _peakSpeedKmh, $"it got up to speed ({_peakSpeedKmh:0.0} km/h peak)");
+        // An open differential with a wheelspinning launch induces a little yaw.
+        Less(travelled * 0.04f, Mathf.Abs(car.GlobalPosition.X),
+             $"it tracked straight (drifted {car.GlobalPosition.X:0.00} m over {travelled:0.0} m)");
         Greater(0.3f, _world.Sim.Engine.OilPressureBar, "oil pressure while driving");
         True(_world.Sim.CanDrive, "running, bolted together and on its wheels");
-        Greater(0f, _world.Sim.Drivetrain.ClutchWear,
-                $"pulling away burned some lining ({_world.Sim.Drivetrain.ClutchWear * 100f:0.00}%)");
-        Less(0.05f, _world.Sim.Drivetrain.ClutchWear, "but nowhere near ruining it");
         False(_world.Sim.Engine.Seized, "nothing seized");
         Equal(4, car.GroundedWheelCount(), "it stayed on all four wheels");
+    }
+
+    private void CheckEngineBraking()
+    {
+        var car = _world.Car;
+        var sim = _world.Sim;
+
+        float wheelOmega = Mathf.Abs(car.DrivenWheelOmega());
+        float geared = wheelOmega * Mathf.Abs(sim.Drivetrain.Ratio) * 60f / Mathf.Tau;
+
+        True(sim.Engine.Running, $"off the throttle in gear it keeps running — '{sim.Engine.Status}'");
+        Near(geared, sim.Engine.Rpm, Mathf.Max(250f, geared * 0.15f),
+             $"revs are tied to road speed through the gearing ({sim.Engine.Rpm:0} rpm against {geared:0} geared)");
+        Less(0f, sim.Engine.LoadTorqueNm,
+             $"the wheels are turning the engine, not the other way round ({sim.Engine.LoadTorqueNm:0.0} Nm)");
+        Less(0f, sim.AxleTorqueNm, $"so the axle is being retarded ({sim.AxleTorqueNm:0} Nm)");
+        Less(_speedAtLiftKmh - 1.5f, car.SpeedKmh,
+             $"and it slowed on the engine alone ({_speedAtLiftKmh:0.0} to {car.SpeedKmh:0.0} km/h)");
+    }
+
+    private void CheckLockup()
+    {
+        True(_sawLockup, $"full brakes locked a wheel while it was still moving ({_lockedAtKmh:0.0} km/h)");
+        Greater(1.5f, _lockedAtKmh, "and it was genuinely sliding, not stopped");
     }
 
     private void Finish()
@@ -187,7 +287,7 @@ public partial class HeadlessSmokeTest : Node3D
         Console.WriteLine();
         if (_failures.Count == 0)
         {
-            Console.WriteLine("PASS  the car was built, started and driven out of the garage");
+            Console.WriteLine("PASS  built, started, span the wheels up, drove out, braked on the engine and locked up");
             GetTree().Quit(0);
             return;
         }
@@ -206,11 +306,9 @@ public partial class HeadlessSmokeTest : Node3D
         return n;
     }
 
-    private void Pass(string what) => Console.WriteLine($"  ok  {what}");
-
     private void Record(bool ok, string what, string detail)
     {
-        if (ok) Pass(what);
+        if (ok) Console.WriteLine($"  ok  {what}");
         else _failures.Add(detail);
     }
 

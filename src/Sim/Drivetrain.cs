@@ -50,6 +50,12 @@ public sealed class Drivetrain
 
     public float AxleTorqueNm { get; private set; }
     public float ClutchSlipRadPerSec { get; private set; }
+
+    /// <summary>
+    /// True when the lining is at its torque limit, so the coupling no longer
+    /// stiffens with more slip.
+    /// </summary>
+    public bool CouplingSaturated { get; private set; }
     public string LastShiftMessage { get; private set; } = "";
 
     /// <summary>Why no drive is reaching the wheels, or null when it is.</summary>
@@ -76,6 +82,24 @@ public sealed class Drivetrain
 
     /// <summary>A dash with no gearbox, because there is no lever to read.</summary>
     public string GearLabel => GearboxFitted ? GearNames[Gear] : "-";
+
+    /// <summary>
+    /// How hard the axle torque resists a change in wheel speed, in Nm per rad/s
+    /// at the wheel. The wheels need this to integrate their own rotation without
+    /// the engine-clutch-wheel chain ringing: it is a stiff spring, and a solver
+    /// that does not know its stiffness has to be run at a far smaller step.
+    /// Zero once the clutch is slipping at its limit, because the torque is then
+    /// constant and the chain is not stiff at all.
+    /// </summary>
+    public float AxleStiffnessNmPerRadPerSec
+    {
+        get
+        {
+            if (!Complete || !InGear || Engagement <= 0.001f || CouplingSaturated) return 0f;
+            float ratio = Ratio;
+            return ClutchStiffness * ratio * ratio * Engagement;
+        }
+    }
 
     public bool TryShift(int gear)
     {
@@ -152,7 +176,9 @@ public sealed class Drivetrain
         ClutchSlipRadPerSec = slip;
 
         float capacity = ClutchCapacityNm;
-        float coupling = Math.Clamp(slip * ClutchStiffness, -capacity, capacity) * Engagement;
+        float demanded = slip * ClutchStiffness;
+        CouplingSaturated = MathF.Abs(demanded) >= capacity;
+        float coupling = Math.Clamp(demanded, -capacity, capacity) * Engagement;
 
         engine.LoadTorqueNm = coupling;
         AxleTorqueNm = coupling * ratio;
@@ -178,6 +204,7 @@ public sealed class Drivetrain
         engine.LoadTorqueNm = 0f;
         AxleTorqueNm = 0f;
         ClutchSlipRadPerSec = 0f;
+        CouplingSaturated = false;
         return 0f;
     }
 }

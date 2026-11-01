@@ -53,7 +53,7 @@ src/Sim/                   pure C#, no Godot — the game's actual rules
 src/Game/                  the Godot layer — presentation and input only
   GameWorld.cs             builds the garage, the chassis, the parts, the player
   CarNode.cs               the body: mounts, four corners, driving controls
-  Vehicle/RaycastWheel.cs  raycast strut and tyre, one per corner
+  Vehicle/RaycastWheel.cs  raycast strut and a tyre with its own rotation
   PartNode.cs              one node that is the part on the floor, in your
                            hands and bolted to the car
   MountNode.cs             a slot that only accepts the part that belongs in it
@@ -165,16 +165,27 @@ put in gear.
   wrong, and the dash says which link is broken.
 - **Chassis**: raycast strut per corner with spring and damper, tyre forces inside
   a friction circle, speed-sensitive steering lock, aerodynamic drag.
+- **Wheel rotation**: each wheel integrates its own angular velocity from the
+  torques acting on it — drive, brake, rolling resistance and the reaction from
+  the contact patch — rather than reading it off the ground speed. Wheelspin,
+  lockup and engine braking are not written anywhere; they fall out of that, and
+  so does open-differential behaviour, because an equal torque split between two
+  wheels free to turn at different speeds *is* an open diff. The rotation is
+  solved semi-implicitly: the engine, clutch and tyre form a stiff spring chain
+  that explicit integration at a 60 Hz step misses stability on by about an order
+  of magnitude, so the two stiffnesses that matter are linearised about the
+  current speed and carried in the denominator.
 
 ## Known limitations
 
 Stated plainly, because the gap between this and a game is mostly in here.
 
-- **No wheelspin.** Driven-wheel speed is taken from ground speed, so the clutch
-  cannot light up the tyres. Longitudinal force is limited by the friction circle,
-  but wheel angular velocity is kinematic rather than simulated.
-- **The lateral tyre model is a slip-velocity spring**, not Pacejka. It is grippy
-  and forgiving; it will not reward a handbrake turn.
+- **The lateral tyre model is a slip-velocity spring**, not Pacejka. Longitudinal
+  slip is modelled properly; lateral is not, so the car will not reward a
+  handbrake turn and has no camber, no load sensitivity and no combined-slip
+  shaping beyond the friction circle.
+- **The surface is uniform.** Every wheel uses the same friction coefficient
+  wherever it is, so there is no tarmac, gravel or mud.
 - **Clutch wear is capped at 95%, not 100%.** A part at full wear becomes
   unfittable, and with no parts shop in the slice that would be a dead end. A
   ruined clutch therefore slips uselessly but can still be taken off and put back
@@ -192,24 +203,27 @@ Stated plainly, because the gap between this and a game is mostly in here.
 
 ## Next, in the order that pays off
 
-1. Real wheel angular velocity, which gives wheelspin, lockup and engine braking
-   through the clutch model that is already there.
+1. A road to drive on — a loop, a hill and somewhere to go. The car is now worth
+   driving and there is nowhere to drive it.
 2. Player needs and a day cycle — the other half of what makes the original tense.
-3. Gearbox oil, and a differential that can be wrong too.
-4. Meshes and sound. The loop has to be right first; it is cheaper to replace a
+3. Per-surface friction, which is a one-line hook into the tyre model, and the
+   thing that makes a gravel shortcut mean something.
+4. Gearbox oil, and a differential that can be wrong too.
+5. Meshes and sound. The loop has to be right first; it is cheaper to replace a
    box than to rebuild the model under it.
-5. A road network, somewhere to drive to, and somewhere to buy a clutch.
 
 ## Verification
 
 - `tests/SimTests`: **43 cases, 131 checks, all passing** on .NET 8.0.427.
 - `--smoke` on Godot 4.5.stable.mono, headless, Linux x86_64: the car is built
-  from loose parts through the real model, stands up on its suspension (the body
-  lifts from −0.27 m to 0.05 m as the wheels go on), starts cold on the choke at
-  847 rpm, pulls away in first and **drives 40.67 m out of the garage at a peak
-  of 36.3 km/h**, tracking within 0.18 m of straight, then stops on the brakes.
-  The bare chassis refuses a gear; pulling away burns 0.52% of the clutch lining,
-  so the wear model is live in the scene and not only in the unit tests.
+  from loose parts through the real model, a bare chassis refuses a gear, the body
+  lifts from −0.27 m to 0.04 m as the wheels go on, it starts cold on the choke at
+  847 rpm, **spins the driven wheels up on a dropped clutch** (the tyre runs
+  3.7 m/s faster than the road, peak slip ratio 1.47, 0.59% of the lining gone),
+  **drives 94.71 m out of the garage at a peak of 45.3 km/h** within 1.2% of
+  straight, **brakes on the engine alone from 45.3 to 36.4 km/h** with the engine
+  measurably behind the geared speed (4299 rpm against 4453) and −76 Nm at the
+  axle, and **locks a wheel under full brakes at 34.4 km/h** before stopping.
 - `dotnet build`: clean, no warnings.
 - **Not checked:** running with a window, rendering, or anything on Windows or
   macOS. Everything above was verified headless on Linux. There is no frame-rate

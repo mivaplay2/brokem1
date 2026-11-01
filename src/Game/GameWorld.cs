@@ -162,6 +162,6 @@ public sealed class GameWorld
         root.AddChild(Build.Solid(new Vector3(3.2f, h, 0.3f), new Vector3(3.6f, h / 2f, -8.2f), "8c8678", "WallFrontR"));
 
         // A strip of tarmac out of the door, so there is somewhere to drive to.
-        root.AddChild(Build.Solid(new Vector3(7f, 0.1f, 60f), new Vector3(0f, 0.03f, -38f), "3b3b3e", "Drive"));
+        root.AddChild(Build.Solid(new Vector3(7f, 0.1f, 300f), new Vector3(0f, 0.03f, -158f), "3b3b3e", "Drive"));
     }
 }

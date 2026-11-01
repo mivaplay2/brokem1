@@ -54,6 +54,16 @@ public partial class CarNode : RigidBody3D
             CenterOfMassMode = CenterOfMassModeEnum.Custom,
             ContinuousCd = true,
             CanSleep = false,
+
+            // Godot's project-wide default linear damp is 0.1, and node damping
+            // COMBINES with it unless the mode is Replace — so setting this to zero
+            // without Replace changes nothing. Left alone it quietly drags the car
+            // down at about 0.8 m/s^2 at road speed, which swamps engine braking and
+            // makes the tyres push the car forward just to slow their own rotation.
+            // Drag is modelled explicitly at the end of the physics step instead.
+            LinearDampMode = DampMode.Replace,
+            LinearDamp = 0f,
+            AngularDampMode = DampMode.Replace,
             AngularDamp = 0.6f,
         };
 
@@ -221,7 +231,7 @@ public partial class CarNode : RigidBody3D
         foreach (var wheel in _wheels)
         {
             if (!wheel.Driven || !Sim.Assembly.IsFunctional(wheel.PartId)) continue;
-            omegaSum += wheel.SpinRateRadPerSec;
+            omegaSum += wheel.AngularVelocity;
             drivenCount++;
         }
         float drivenOmega = drivenCount > 0 ? omegaSum / drivenCount : 0f;
@@ -240,10 +250,16 @@ public partial class CarNode : RigidBody3D
             wheel.BrakeTorqueNm = brake * (wheel.Driven ? 900f : 1500f)
                                   + (handbrake && wheel.Driven ? 2200f : 0f);
 
+            // The clutch's stiffness has to reach the wheel's solver, or the
+            // engine-clutch-wheel chain rings itself apart at this step size.
+            wheel.DriveStiffnessNmPerRadPerSec = wheel.Driven && drivenCount > 0
+                ? Sim.Drivetrain.AxleStiffnessNmPerRadPerSec / drivenCount
+                : 0f;
+
             wheel.Simulate(this, dt, fitted);
 
             var part = PartFor(wheel.PartId);
-            if (part != null) part.SpinRate = fitted ? wheel.SpinRateRadPerSec : 0f;
+            if (part != null) part.SpinRate = fitted ? wheel.AngularVelocity : 0f;
         }
 
         // ----- aerodynamic drag, enough to give it a terminal speed
@@ -259,5 +275,44 @@ public partial class CarNode : RigidBody3D
         foreach (var wheel in _wheels)
             if (wheel.Grounded && Sim.Assembly.IsFunctional(wheel.PartId)) n++;
         return n;
+    }
+
+    public IReadOnlyList<RaycastWheel> Wheels => _wheels;
+
+    public RaycastWheel WheelFor(string partId)
+    {
+        foreach (var wheel in _wheels)
+            if (wheel.PartId == partId) return wheel;
+        return null;
+    }
+
+    /// <summary>A driven tyre turning faster than the road under it.</summary>
+    public bool DrivenWheelsSpinning()
+    {
+        foreach (var wheel in _wheels)
+            if (wheel.Driven && wheel.Spinning) return true;
+        return false;
+    }
+
+    /// <summary>A tyre the brakes have stopped while the car is still moving.</summary>
+    public bool AnyWheelLocked()
+    {
+        foreach (var wheel in _wheels)
+            if (wheel.Locked) return true;
+        return false;
+    }
+
+    /// <summary>Mean rotation of the driven wheels that are actually fitted, rad/s.</summary>
+    public float DrivenWheelOmega()
+    {
+        float sum = 0f;
+        int n = 0;
+        foreach (var wheel in _wheels)
+        {
+            if (!wheel.Driven || !Sim.Assembly.IsFunctional(wheel.PartId)) continue;
+            sum += wheel.AngularVelocity;
+            n++;
+        }
+        return n > 0 ? sum / n : 0f;
     }
 }
