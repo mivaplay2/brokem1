@@ -17,3 +17,8 @@ obj/
 
 # Saves (runtime data)
 *.mac.save
+
+# Delivery artefacts: a bundle of this repository and a zip of its own source,
+# produced when a push could not reach the remote. Not part of the project.
+*.bundle
+my-autumn-car-source.zip
